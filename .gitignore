@@ -4,3 +4,4 @@ storage/
 .venv/
 .env
 backfill*.json
+analysis_out/
