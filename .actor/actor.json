@@ -1,0 +1,10 @@
+{
+  "actorSpecification": 1,
+  "name": "kucoin-market-collector",
+  "title": "KuCoin Market Collector (private)",
+  "description": "Snapshot periodici dei perpetual KuCoin Futures (prezzi, funding, open interest), rilevamento nuovi listing e backfill storico per la ricerca.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "input": "./input_schema.json",
+  "dockerfile": "./Dockerfile"
+}
