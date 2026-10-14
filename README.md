@@ -5,8 +5,10 @@ Actor Apify che raccoglie solo dati **pubblici** di KuCoin Futures. Nessuna API 
 ## Modalità
 - `snapshot` — tutti i perpetual USDT attivi: mark/index/last price, funding attuale e previsto,
   open interest, volumi 24h. Rileva i nuovi listing. **Schedulare ogni 15 min.**
-- `backfill` — per i contratti listati negli ultimi N giorni scarica candele dal giorno del
-  listing + storico funding. **Lanciare a mano una volta.**
+- `backfill` — per i contratti listati negli ultimi N giorni. Con `eventWindowDays` > 0 salva solo
+  la finestra dopo il listing (candele fini nei primi giorni + orarie fino a fine finestra + funding)
+  più BTC come riferimento di regime. Con `eventWindowDays` = 0 scarica tutto lo storico.
+  **Lanciare a mano una volta.**
 
 ## Storage (named, persistente)
 | Nome | Contenuto |

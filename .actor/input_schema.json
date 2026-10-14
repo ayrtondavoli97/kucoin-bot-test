@@ -32,20 +32,53 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 730,
-      "default": 120,
+      "default": 730,
       "description": "Il backfill scarica lo storico dei contratti listati negli ultimi N giorni, partendo dal giorno del listing."
+    },
+    "eventWindowDays": {
+      "title": "Backfill: finestra evento (giorni dopo il listing)",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 365,
+      "default": 30,
+      "description": "Per ogni contratto scarica solo i primi N giorni dopo il listing (dataset compatto per l'analisi). 0 = tutto lo storico fino a oggi alla granularità indicata sotto."
+    },
+    "fineGranularityMinutes": {
+      "title": "Backfill: granularità fine (minuti)",
+      "type": "integer",
+      "default": 15,
+      "description": "Granularità delle candele nei primi giorni dopo il listing. Usata solo con finestra evento > 0."
+    },
+    "fineWindowDays": {
+      "title": "Backfill: giorni a granularità fine",
+      "type": "integer",
+      "minimum": 1,
+      "default": 7,
+      "description": "Per quanti giorni dopo il listing scaricare le candele fini."
+    },
+    "coarseGranularityMinutes": {
+      "title": "Backfill: granularità larga (minuti)",
+      "type": "integer",
+      "default": 60,
+      "description": "Granularità delle candele per tutta la finestra evento e per il riferimento BTC."
+    },
+    "includeBtcReference": {
+      "title": "Backfill: includi BTC come riferimento",
+      "type": "boolean",
+      "default": true,
+      "description": "Aggiunge le candele di XBTUSDTM sull'intero periodo, per classificare il regime di mercato al momento di ogni listing."
     },
     "klineGranularityMinutes": {
       "title": "Backfill: granularità candele (minuti)",
       "type": "integer",
-      "description": "Valori accettati da KuCoin: 1, 5, 15, 30, 60, 120, 240, 480, 720, 1440, 10080.",
+      "description": "Usata solo con finestra evento = 0 (storico completo). Valori accettati da KuCoin: 1, 5, 15, 30, 60, 120, 240, 480, 720, 1440, 10080.",
       "default": 60
     },
     "maxBackfillSymbols": {
       "title": "Backfill: numero massimo di contratti",
       "type": "integer",
       "minimum": 1,
-      "default": 300,
+      "default": 1000,
       "description": "Limite di sicurezza sul numero di contratti scaricati in un backfill (i più recenti per primi)."
     },
     "proxyConfiguration": {

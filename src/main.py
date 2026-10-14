@@ -185,7 +185,95 @@ async def fetch_funding_history(client: httpx.AsyncClient, symbol: str, start: i
     return [out[k] for k in sorted(out)]
 
 
+DAY_MS = 24 * 3600 * 1000
+REFERENCE_SYMBOL = "XBTUSDTM"
+
+
+async def push_backfill_item(ds, item: dict) -> None:
+    # Named dataset = archivio; default dataset = tab "Output" del run,
+    # da cui si esporta direttamente il risultato di questo backfill.
+    await ds.push_data(item)
+    await Actor.push_data(item)
+
+
 async def run_backfill(client: httpx.AsyncClient, inp: dict) -> None:
+    window_days = inp.get("eventWindowDays", 0)
+    if window_days and window_days > 0:
+        await run_event_backfill(client, inp)
+    else:
+        await run_full_backfill(client, inp)
+
+
+async def run_event_backfill(client: httpx.AsyncClient, inp: dict) -> None:
+    """Per ogni listing salva solo la finestra evento: dettaglio fine nei primi
+    giorni + candele più larghe fino a fine finestra. Più BTC come riferimento
+    per segmentare per regime di mercato."""
+    ts = now_ms()
+    days = inp.get("backfillDays", 730)
+    window_days = inp.get("eventWindowDays", 30)
+    fine_g = inp.get("fineGranularityMinutes", 15)
+    fine_days = inp.get("fineWindowDays", 7)
+    coarse_g = inp.get("coarseGranularityMinutes", 60)
+    max_symbols = inp.get("maxBackfillSymbols", 1000)
+    cutoff = ts - days * DAY_MS
+
+    contracts = await fetch_contracts(client, inp.get("usdtOnly", True))
+    recent = sorted(
+        (c for c in contracts if (c.get("firstOpenDate") or 0) >= cutoff),
+        key=lambda c: c["firstOpenDate"],
+        reverse=True,
+    )[:max_symbols]
+    Actor.log.info(f"Contratti listati negli ultimi {days} giorni: {len(recent)} "
+                   f"(finestra {window_days}g, {fine_g}m per {fine_days}g, poi {coarse_g}m)")
+
+    ds = await Actor.open_dataset(name=BACKFILL_DATASET)
+
+    if inp.get("includeBtcReference", True):
+        start = cutoff - DAY_MS  # copre anche il contesto del listing più vecchio
+        btc = await fetch_klines(client, REFERENCE_SYMBOL, coarse_g, start, ts)
+        await push_backfill_item(ds, {
+            "symbol": REFERENCE_SYMBOL, "reference": True,
+            "granularityMinutes": coarse_g, "candles": btc, "collectedAt": iso(ts),
+        })
+        Actor.log.info(f"Riferimento {REFERENCE_SYMBOL}: {len(btc)} candele")
+
+    done = 0
+    for c in recent:
+        sym, first_open = c["symbol"], c["firstOpenDate"]
+        fine_end = min(first_open + fine_days * DAY_MS, ts)
+        window_end = min(first_open + window_days * DAY_MS, ts)
+        try:
+            fine = await fetch_klines(client, sym, fine_g, first_open, fine_end)
+            coarse = await fetch_klines(client, sym, coarse_g, first_open, window_end)
+            funding = await fetch_funding_history(client, sym, first_open, window_end)
+        except Exception as e:
+            Actor.log.warning(f"{sym}: backfill fallito ({e}), salto")
+            continue
+        await push_backfill_item(ds, {
+            "symbol": sym,
+            "reference": False,
+            "baseCurrency": c.get("baseCurrency"),
+            "firstOpenDate": first_open,
+            "firstOpenDateIso": iso(first_open),
+            "windowComplete": window_end - first_open >= window_days * DAY_MS,
+            "maxLeverage": c.get("maxLeverage"),
+            "multiplier": c.get("multiplier"),
+            "turnoverOf24h": c.get("turnoverOf24h"),
+            "fineGranularityMinutes": fine_g,
+            "candlesFine": fine,          # [time, open, high, low, close, volume]
+            "coarseGranularityMinutes": coarse_g,
+            "candles": coarse,
+            "funding": funding,
+            "collectedAt": iso(ts),
+        })
+        done += 1
+        Actor.log.info(f"[{done}/{len(recent)}] {sym}: {len(fine)} fini, {len(coarse)} orarie, {len(funding)} funding")
+
+    await Actor.set_value("OUTPUT", {"mode": "backfill", "symbols": done, "days": days,
+                                     "eventWindowDays": window_days})
+
+
+async def run_full_backfill(client: httpx.AsyncClient, inp: dict) -> None:
     ts = now_ms()
     days = inp.get("backfillDays", 120)
     granularity = inp.get("klineGranularityMinutes", 60)
@@ -220,10 +308,7 @@ async def run_backfill(client: httpx.AsyncClient, inp: dict) -> None:
             "funding": funding,
             "collectedAt": iso(ts),
         }
-        # Named dataset = archivio; default dataset = tab "Output" del run,
-        # da cui si esporta direttamente il risultato di questo backfill.
-        await ds.push_data(item)
-        await Actor.push_data(item)
+        await push_backfill_item(ds, item)
         done += 1
         Actor.log.info(f"[{done}/{len(recent)}] {sym}: {len(candles)} candele, {len(funding)} funding")
 
