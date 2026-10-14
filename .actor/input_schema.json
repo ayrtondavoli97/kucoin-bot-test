@@ -6,11 +6,12 @@
     "mode": {
       "title": "Modalità",
       "type": "string",
-      "description": "snapshot = fotografia del mercato (da schedulare ogni 15 min). backfill = storico dei contratti listati di recente (da lanciare a mano una volta).",
+      "description": "snapshot = fotografia del mercato (da schedulare ogni 15 min). backfill = storico dei contratti listati di recente. unlocks = sblocchi di token (DefiLlama) incrociati con i perpetual KuCoin, con prezzi attorno a ogni evento.",
       "editor": "select",
       "enum": [
         "snapshot",
-        "backfill"
+        "backfill",
+        "unlocks"
       ],
       "default": "snapshot"
     },
@@ -80,6 +81,55 @@
       "minimum": 1,
       "default": 1000,
       "description": "Limite di sicurezza sul numero di contratti scaricati in un backfill (i più recenti per primi)."
+    },
+    "unlockLookbackDays": {
+      "title": "Unlocks: eventi degli ultimi N giorni",
+      "type": "integer",
+      "minimum": 30,
+      "default": 730,
+      "description": "Considera gli sblocchi passati fino a N giorni fa."
+    },
+    "unlockMinPctCirculating": {
+      "title": "Unlocks: soglia minima (% del circolante)",
+      "type": "number",
+      "minimum": 0.1,
+      "default": 1.0,
+      "description": "Un giorno conta come evento se lo sbloccato cresce almeno di questa % rispetto al circolante del giorno prima. Sotto lo 0,5% l'effetto è trascurabile."
+    },
+    "unlockMergeDays": {
+      "title": "Unlocks: unisci eventi entro N giorni",
+      "type": "integer",
+      "minimum": 0,
+      "default": 3,
+      "description": "Sblocchi a pochi giorni di distanza vengono trattati come un unico evento."
+    },
+    "unlockWindowBeforeDays": {
+      "title": "Unlocks: giorni di prezzi prima dell'evento",
+      "type": "integer",
+      "minimum": 1,
+      "default": 30,
+      "description": "Candele orarie scaricate prima della data di sblocco (il calo spesso inizia in anticipo)."
+    },
+    "unlockWindowAfterDays": {
+      "title": "Unlocks: giorni di prezzi dopo l'evento",
+      "type": "integer",
+      "minimum": 1,
+      "default": 30,
+      "description": "Candele orarie scaricate dopo la data di sblocco."
+    },
+    "unlockMaxProtocols": {
+      "title": "Unlocks: limite protocolli (test)",
+      "type": "integer",
+      "minimum": 0,
+      "default": 0,
+      "description": "0 = tutti. Metti un numero piccolo per un run di prova veloce."
+    },
+    "coingeckoApiKey": {
+      "title": "CoinGecko demo API key (opzionale)",
+      "type": "string",
+      "editor": "textfield",
+      "isSecret": true,
+      "description": "Solo se CoinGecko blocca le richieste anonime. Serve per collegare i token ai simboli KuCoin."
     },
     "concurrency": {
       "title": "Backfill: download in parallelo",

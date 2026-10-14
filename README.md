@@ -10,6 +10,10 @@ Actor Apify che raccoglie solo dati **pubblici** di KuCoin Futures. Nessuna API 
   più BTC come riferimento di regime. Con `eventWindowDays` = 0 scarica tutto lo storico.
   **Lanciare a mano una volta.**
 
+- `unlocks` — sblocchi di token da DefiLlama (dataset pubblici) incrociati con i perpetual KuCoin:
+  per ogni sblocco ≥ soglia scarica candele orarie e funding prima/dopo. Gli sblocchi futuri vanno
+  in `kucoin-upcoming-unlocks`.
+
 ## Storage (named, persistente)
 | Nome | Contenuto |
 |---|---|

@@ -337,5 +337,9 @@ async def main() -> None:
                                      headers={"User-Agent": "kucoin-market-collector/1.0"}) as client:
             if mode == "backfill":
                 await run_backfill(client, inp)
+            elif mode == "unlocks":
+                from .unlocks import run_unlocks
+                await run_unlocks(client, inp, fetch_contracts, fetch_klines,
+                                  fetch_funding_history, iso, now_ms)
             else:
                 await run_snapshot(client, inp)
