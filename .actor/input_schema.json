@@ -8,7 +8,10 @@
       "type": "string",
       "description": "snapshot = fotografia del mercato (da schedulare ogni 15 min). backfill = storico dei contratti listati di recente (da lanciare a mano una volta).",
       "editor": "select",
-      "enum": ["snapshot", "backfill"],
+      "enum": [
+        "snapshot",
+        "backfill"
+      ],
       "default": "snapshot"
     },
     "usdtOnly": {
@@ -21,14 +24,16 @@
       "title": "Al primo avvio, segnala listing delle ultime N ore",
       "type": "integer",
       "minimum": 1,
-      "default": 48
+      "default": 48,
+      "description": "Solo al primo avvio: i contratti listati nelle ultime N ore vengono segnalati come nuovi listing. Dopo, viene segnalato ogni contratto mai visto prima."
     },
     "backfillDays": {
       "title": "Backfill: contratti listati negli ultimi N giorni",
       "type": "integer",
       "minimum": 1,
       "maximum": 730,
-      "default": 120
+      "default": 120,
+      "description": "Il backfill scarica lo storico dei contratti listati negli ultimi N giorni, partendo dal giorno del listing."
     },
     "klineGranularityMinutes": {
       "title": "Backfill: granularità candele (minuti)",
@@ -40,14 +45,17 @@
       "title": "Backfill: numero massimo di contratti",
       "type": "integer",
       "minimum": 1,
-      "default": 300
+      "default": 300,
+      "description": "Limite di sicurezza sul numero di contratti scaricati in un backfill (i più recenti per primi)."
     },
     "proxyConfiguration": {
       "title": "Proxy",
       "type": "object",
       "description": "Lascia disattivato. Attivalo solo se KuCoin blocca gli IP dei server Apify.",
       "editor": "proxy",
-      "default": { "useApifyProxy": false }
+      "default": {
+        "useApifyProxy": false
+      }
     }
   },
   "required": []
