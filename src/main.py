@@ -44,25 +44,56 @@ def iso(ms: int | None) -> str | None:
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat()
 
 
-async def get_json(client: httpx.AsyncClient, path: str, params: dict | None = None, retries: int = 5):
-    """GET con retry su 429/5xx ed errori di rete. Ritorna il campo `data`."""
+# Il endpoint del funding ha un limite più stretto: tutte le richieste del run
+# passano da qui, distanziate di almeno THROTTLE[path] secondi.
+THROTTLE = {"/api/v1/contract/funding-rates": 0.35, "/api/v1/kline/query": 0.08}
+_throttle_lock: dict[str, asyncio.Lock] = {}
+_throttle_last: dict[str, float] = {}
+
+
+async def _wait_turn(path: str) -> None:
+    gap = THROTTLE.get(path)
+    if not gap:
+        return
+    lock = _throttle_lock.setdefault(path, asyncio.Lock())
+    async with lock:
+        wait = _throttle_last.get(path, 0) + gap - time.monotonic()
+        if wait > 0:
+            await asyncio.sleep(wait)
+        _throttle_last[path] = time.monotonic()
+
+
+async def get_json(client: httpx.AsyncClient, path: str, params: dict | None = None, retries: int = 8):
+    """GET con retry su 429/5xx ed errori di rete. Ritorna il campo `data`.
+    Sui 429 rispetta l'header gw-ratelimit-reset di KuCoin (ms al reset)."""
     delay = 1.0
     for attempt in range(1, retries + 1):
+        await _wait_turn(path)
+        wait = delay
         try:
             r = await client.get(FUTURES_BASE + path, params=params)
-            if r.status_code == 429 or r.status_code >= 500:
+            if r.status_code == 429:
+                try:
+                    wait = max(delay, int(r.headers.get("gw-ratelimit-reset", 0)) / 1000 + 0.5)
+                except ValueError:
+                    pass
+                raise httpx.HTTPStatusError("HTTP 429", request=r.request, response=r)
+            if r.status_code >= 500:
                 raise httpx.HTTPStatusError(f"HTTP {r.status_code}", request=r.request, response=r)
             r.raise_for_status()
             body = r.json()
+            if str(body.get("code")) == "429000":
+                raise RuntimeError("KuCoin rate limit (429000)")
             if str(body.get("code")) != "200000":
                 raise RuntimeError(f"KuCoin error {body.get('code')}: {body.get('msg')}")
             return body.get("data")
         except (httpx.HTTPError, RuntimeError) as e:
             if attempt == retries:
                 raise
-            Actor.log.warning(f"{path} tentativo {attempt} fallito ({e}), riprovo tra {delay:.0f}s")
-            await asyncio.sleep(delay)
-            delay *= 2
+            if attempt >= 3:  # i primi tentativi falliti sono normali, non sporcare il log
+                Actor.log.warning(f"{path} tentativo {attempt} fallito ({e}), riprovo tra {wait:.0f}s")
+            await asyncio.sleep(wait)
+            delay = min(delay * 2, 30)
 
 
 async def fetch_contracts(client: httpx.AsyncClient, usdt_only: bool) -> list[dict]:
@@ -157,7 +188,6 @@ async def _funding_window(client: httpx.AsyncClient, symbol: str, t: int, t2: in
     data = await get_json(client, "/api/v1/contract/funding-rates", {
         "symbol": symbol, "from": t, "to": t2,
     }) or []
-    await asyncio.sleep(0.15)
     # Finestra piena = risultati probabilmente troncati (contratti con funding
     # ogni 1-4h): la dividiamo a metà e richiediamo le due parti.
     if len(data) >= FUNDING_PAGE_CAP and t2 - t > 2 * 3600 * 1000 and depth < 12:
@@ -171,7 +201,7 @@ async def _funding_window(client: httpx.AsyncClient, symbol: str, t: int, t2: in
 
 
 async def fetch_funding_history(client: httpx.AsyncClient, symbol: str, start: int, end: int) -> list[dict]:
-    window = 7 * 24 * 3600 * 1000
+    window = 30 * 24 * 3600 * 1000  # 90 righe a funding 8h; le finestre piene vengono divise
     out: dict[int, dict] = {}
     t = start
     while t < end:
