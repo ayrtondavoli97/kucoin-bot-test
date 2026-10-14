@@ -321,6 +321,59 @@ async def run_full_backfill(client: httpx.AsyncClient, inp: dict) -> None:
     await Actor.set_value("OUTPUT", {"mode": "backfill", "symbols": done, "days": days})
 
 
+# ---------------------------------------------------------------- history
+
+HISTORY_DATASET = "kucoin-history"
+DEFAULT_HISTORY_SYMBOLS = [
+    "XBTUSDTM", "ETHUSDTM", "SOLUSDTM", "BNBUSDTM", "XRPUSDTM", "DOGEUSDTM", "ADAUSDTM",
+    "AVAXUSDTM", "LINKUSDTM", "DOTUSDTM", "LTCUSDTM", "TRXUSDTM", "BCHUSDTM", "NEARUSDTM",
+    "ATOMUSDTM", "UNIUSDTM", "ETCUSDTM", "FILUSDTM", "APTUSDTM", "ARBUSDTM", "OPUSDTM",
+    "SUIUSDTM", "INJUSDTM", "TONUSDTM",
+]
+
+
+async def run_history(client: httpx.AsyncClient, inp: dict) -> None:
+    """Storico lungo di una lista di perpetual (per strategie trend following)."""
+    ts = now_ms()
+    days = inp.get("historyDays", 1825)
+    granularity = inp.get("historyGranularityMinutes", 240)
+    wanted = inp.get("historySymbols") or DEFAULT_HISTORY_SYMBOLS
+    start_all = ts - days * DAY_MS
+
+    active = {c["symbol"]: c for c in await fetch_contracts(client, usdt_only=True)}
+    missing = [s for s in wanted if s not in active]
+    if missing:
+        Actor.log.warning(f"Non attivi su KuCoin, salto: {missing}")
+    symbols = [s for s in wanted if s in active]
+
+    ds = await Actor.open_dataset(name=HISTORY_DATASET)
+    sem = asyncio.Semaphore(max(1, inp.get("concurrency", 4)))
+    done = 0
+
+    async def process(sym: str) -> None:
+        nonlocal done
+        c = active[sym]
+        start = max(start_all, c.get("firstOpenDate") or start_all)
+        async with sem:
+            try:
+                candles = await fetch_klines(client, sym, granularity, start, ts)
+                funding = await fetch_funding_history(client, sym, start, ts)
+            except Exception as e:
+                Actor.log.warning(f"{sym}: storico non scaricato ({e})")
+                return
+        item = {"symbol": sym, "baseCurrency": c.get("baseCurrency"), "firstOpenDate": c.get("firstOpenDate"),
+                "granularityMinutes": granularity, "candles": candles, "funding": funding,
+                "collectedAt": iso(ts)}
+        await ds.push_data(item)
+        await Actor.push_data(item)
+        done += 1
+        first = iso(candles[0][0]) if candles else None
+        Actor.log.info(f"[{done}/{len(symbols)}] {sym}: {len(candles)} candele da {first}, {len(funding)} funding")
+
+    await asyncio.gather(*(process(s) for s in symbols))
+    await Actor.set_value("OUTPUT", {"mode": "history", "symbols": done, "missing": missing})
+
+
 # ---------------------------------------------------------------- entry
 
 async def main() -> None:
@@ -337,6 +390,8 @@ async def main() -> None:
                                      headers={"User-Agent": "kucoin-market-collector/1.0"}) as client:
             if mode == "backfill":
                 await run_backfill(client, inp)
+            elif mode == "history":
+                await run_history(client, inp)
             elif mode == "unlocks":
                 from .unlocks import run_unlocks
                 await run_unlocks(client, inp, fetch_contracts, fetch_klines,

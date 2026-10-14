@@ -5,3 +5,4 @@ storage/
 .env
 backfill*.json
 analysis_out/
+trend_out/

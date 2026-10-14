@@ -14,6 +14,9 @@ Actor Apify che raccoglie solo dati **pubblici** di KuCoin Futures. Nessuna API 
   per ogni sblocco ≥ soglia scarica candele orarie e funding prima/dopo. Gli sblocchi futuri vanno
   in `kucoin-upcoming-unlocks`.
 
+- `history` — storico lungo (default 5 anni, candele 4h) + funding dei 24 perpetual principali,
+  per il backtest trend following (`analysis/trend_study.py`).
+
 ## Storage (named, persistente)
 | Nome | Contenuto |
 |---|---|

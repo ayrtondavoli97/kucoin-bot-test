@@ -6,12 +6,13 @@
     "mode": {
       "title": "Modalità",
       "type": "string",
-      "description": "snapshot = fotografia del mercato (da schedulare ogni 15 min). backfill = storico dei contratti listati di recente. unlocks = sblocchi di token (DefiLlama) incrociati con i perpetual KuCoin, con prezzi attorno a ogni evento.",
+      "description": "snapshot = fotografia del mercato (da schedulare ogni 15 min). backfill = storico dei contratti listati di recente. unlocks = sblocchi di token (DefiLlama) incrociati con i perpetual KuCoin, con prezzi attorno a ogni evento. history = storico lungo dei perpetual principali (per il trend following).",
       "editor": "select",
       "enum": [
         "snapshot",
         "backfill",
-        "unlocks"
+        "unlocks",
+        "history"
       ],
       "default": "snapshot"
     },
@@ -130,6 +131,26 @@
       "editor": "textfield",
       "isSecret": true,
       "description": "Solo se CoinGecko blocca le richieste anonime. Serve per collegare i token ai simboli KuCoin."
+    },
+    "historySymbols": {
+      "title": "History: simboli",
+      "type": "array",
+      "editor": "stringList",
+      "description": "Perpetual da scaricare (es. XBTUSDTM). Vuoto = i 24 principali predefiniti.",
+      "default": []
+    },
+    "historyDays": {
+      "title": "History: giorni di storico",
+      "type": "integer",
+      "minimum": 30,
+      "default": 1825,
+      "description": "Quanti giorni indietro scaricare (o dal listing del contratto, se più recente)."
+    },
+    "historyGranularityMinutes": {
+      "title": "History: granularità candele (minuti)",
+      "type": "integer",
+      "default": 240,
+      "description": "240 = candele da 4 ore, sufficienti per strategie su più giorni. Valori KuCoin: 1, 5, 15, 30, 60, 120, 240, 480, 720, 1440, 10080."
     },
     "concurrency": {
       "title": "Backfill: download in parallelo",
