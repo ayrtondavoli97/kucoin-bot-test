@@ -149,24 +149,39 @@ async def fetch_klines(client: httpx.AsyncClient, symbol: str, granularity: int,
     return [out[k] for k in sorted(out)]
 
 
+FUNDING_PAGE_CAP = 100  # KuCoin restituisce al massimo 100 righe per richiesta
+
+
+async def _funding_window(client: httpx.AsyncClient, symbol: str, t: int, t2: int,
+                          out: dict[int, dict], depth: int = 0) -> None:
+    data = await get_json(client, "/api/v1/contract/funding-rates", {
+        "symbol": symbol, "from": t, "to": t2,
+    }) or []
+    await asyncio.sleep(0.15)
+    # Finestra piena = risultati probabilmente troncati (contratti con funding
+    # ogni 1-4h): la dividiamo a metà e richiediamo le due parti.
+    if len(data) >= FUNDING_PAGE_CAP and t2 - t > 2 * 3600 * 1000 and depth < 12:
+        mid = (t + t2) // 2
+        await _funding_window(client, symbol, t, mid, out, depth + 1)
+        await _funding_window(client, symbol, mid, t2, out, depth + 1)
+        return
+    for row in data:
+        tp = int(row.get("timepoint") or row.get("timePoint") or 0)
+        out[tp] = {"timepoint": tp, "fundingRate": row.get("fundingRate")}
+
+
 async def fetch_funding_history(client: httpx.AsyncClient, symbol: str, start: int, end: int) -> list[dict]:
-    window = 30 * 24 * 3600 * 1000
+    window = 7 * 24 * 3600 * 1000
     out: dict[int, dict] = {}
     t = start
     while t < end:
         t2 = min(t + window, end)
         try:
-            data = await get_json(client, "/api/v1/contract/funding-rates", {
-                "symbol": symbol, "from": t, "to": t2,
-            }) or []
+            await _funding_window(client, symbol, t, t2, out)
         except Exception as e:  # endpoint non critico: non bloccare il backfill
-            Actor.log.warning(f"Funding history {symbol} non disponibile: {e}")
-            return [out[k] for k in sorted(out)]
-        for row in data:
-            tp = int(row.get("timepoint") or row.get("timePoint") or 0)
-            out[tp] = {"timepoint": tp, "fundingRate": row.get("fundingRate")}
+            Actor.log.warning(f"Funding history {symbol} incompleta: {e}")
+            break
         t = t2
-        await asyncio.sleep(0.15)
     return [out[k] for k in sorted(out)]
 
 
@@ -195,7 +210,7 @@ async def run_backfill(client: httpx.AsyncClient, inp: dict) -> None:
         except Exception as e:
             Actor.log.warning(f"{sym}: backfill fallito ({e}), salto")
             continue
-        await ds.push_data({
+        item = {
             "symbol": sym,
             "baseCurrency": c.get("baseCurrency"),
             "firstOpenDate": first_open,
@@ -204,7 +219,11 @@ async def run_backfill(client: httpx.AsyncClient, inp: dict) -> None:
             "candles": candles,          # [time, open, high, low, close, volume]
             "funding": funding,
             "collectedAt": iso(ts),
-        })
+        }
+        # Named dataset = archivio; default dataset = tab "Output" del run,
+        # da cui si esporta direttamente il risultato di questo backfill.
+        await ds.push_data(item)
+        await Actor.push_data(item)
         done += 1
         Actor.log.info(f"[{done}/{len(recent)}] {sym}: {len(candles)} candele, {len(funding)} funding")
 
