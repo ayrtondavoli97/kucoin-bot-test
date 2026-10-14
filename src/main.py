@@ -237,18 +237,22 @@ async def run_event_backfill(client: httpx.AsyncClient, inp: dict) -> None:
         })
         Actor.log.info(f"Riferimento {REFERENCE_SYMBOL}: {len(btc)} candele")
 
+    sem = asyncio.Semaphore(max(1, inp.get("concurrency", 4)))
     done = 0
-    for c in recent:
+
+    async def process(c: dict) -> None:
+        nonlocal done
         sym, first_open = c["symbol"], c["firstOpenDate"]
         fine_end = min(first_open + fine_days * DAY_MS, ts)
         window_end = min(first_open + window_days * DAY_MS, ts)
-        try:
-            fine = await fetch_klines(client, sym, fine_g, first_open, fine_end)
-            coarse = await fetch_klines(client, sym, coarse_g, first_open, window_end)
-            funding = await fetch_funding_history(client, sym, first_open, window_end)
-        except Exception as e:
-            Actor.log.warning(f"{sym}: backfill fallito ({e}), salto")
-            continue
+        async with sem:
+            try:
+                fine = await fetch_klines(client, sym, fine_g, first_open, fine_end)
+                coarse = await fetch_klines(client, sym, coarse_g, first_open, window_end)
+                funding = await fetch_funding_history(client, sym, first_open, window_end)
+            except Exception as e:
+                Actor.log.warning(f"{sym}: backfill fallito ({e}), salto")
+                return
         await push_backfill_item(ds, {
             "symbol": sym,
             "reference": False,
@@ -268,6 +272,8 @@ async def run_event_backfill(client: httpx.AsyncClient, inp: dict) -> None:
         })
         done += 1
         Actor.log.info(f"[{done}/{len(recent)}] {sym}: {len(fine)} fini, {len(coarse)} orarie, {len(funding)} funding")
+
+    await asyncio.gather(*(process(c) for c in recent))
 
     await Actor.set_value("OUTPUT", {"mode": "backfill", "symbols": done, "days": days,
                                      "eventWindowDays": window_days})

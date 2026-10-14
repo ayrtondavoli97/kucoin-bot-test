@@ -28,3 +28,12 @@ L'actor resta privato finché non lo pubblichi sullo Store.
 
 ## Export per l'analisi
 Console → Storage → Datasets → dataset → Export (JSON o CSV), poi allegare il file in chat.
+
+## Esecuzione in locale (Windows / PowerShell)
+```
+pip install -r requirements.txt
+mkdir storage\key_value_stores\default -Force
+# salva l'input JSON in storage\key_value_stores\default\INPUT.json
+python -m src
+python tools\export_local.py backfill.json
+```

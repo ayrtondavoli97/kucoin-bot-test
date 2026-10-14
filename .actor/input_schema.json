@@ -81,6 +81,14 @@
       "default": 1000,
       "description": "Limite di sicurezza sul numero di contratti scaricati in un backfill (i più recenti per primi)."
     },
+    "concurrency": {
+      "title": "Backfill: download in parallelo",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10,
+      "default": 4,
+      "description": "Quanti contratti scaricare contemporaneamente. 4 è un buon compromesso; oltre 8 KuCoin può iniziare a rispondere 429 (gestito con retry)."
+    },
     "proxyConfiguration": {
       "title": "Proxy",
       "type": "object",
