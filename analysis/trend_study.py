@@ -105,6 +105,10 @@ def strategies() -> dict[str, callable]:
             s[f"EMA{f}-{sl}_{tag}"] = lambda px, f=f, sl=sl, ls=ls: sig_ema(px, f, sl, ls)
         for N in (20, 55, 100):
             s[f"BRK{N}_{tag}"] = lambda px, N=N, ls=ls: sig_breakout(px, N, ls)
+    # Ensemble: media di TUTTI i segnali della stessa famiglia (nessuna scelta sul passato).
+    for tag in ("L", "LS"):
+        members = [k for k in s if k.endswith("_" + tag)]
+        s[f"ENSEMBLE_{tag}"] = lambda px, members=members, s=dict(s): sum(s[m](px).fillna(0) for m in members) / len(members)
     return s
 
 
