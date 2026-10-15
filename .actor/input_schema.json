@@ -6,13 +6,14 @@
     "mode": {
       "title": "Modalità",
       "type": "string",
-      "description": "snapshot = fotografia del mercato (da schedulare ogni 15 min). backfill = storico dei contratti listati di recente. unlocks = sblocchi di token (DefiLlama) incrociati con i perpetual KuCoin, con prezzi attorno a ogni evento. history = storico lungo dei perpetual principali (per il trend following).",
+      "description": "snapshot = fotografia del mercato (da schedulare ogni 15 min). backfill = storico dei contratti listati di recente. unlocks = sblocchi di token (DefiLlama) incrociati con i perpetual KuCoin, con prezzi attorno a ogni evento. history = storico lungo dei perpetual principali (per il trend following). paper_unlocks = executor in paper trading della strategia sblocchi (da schedulare ogni ora, nessun ordine reale).",
       "editor": "select",
       "enum": [
         "snapshot",
         "backfill",
         "unlocks",
-        "history"
+        "history",
+        "paper_unlocks"
       ],
       "default": "snapshot"
     },
@@ -151,6 +152,87 @@
       "type": "integer",
       "default": 240,
       "description": "240 = candele da 4 ore, sufficienti per strategie su più giorni. Valori KuCoin: 1, 5, 15, 30, 60, 120, 240, 480, 720, 1440, 10080."
+    },
+    "paperCapital": {
+      "title": "Paper: capitale iniziale (USDT)",
+      "type": "integer",
+      "minimum": 100,
+      "default": 10000,
+      "description": "Capitale simulato. Usato solo al primo run (o dopo un reset)."
+    },
+    "positionPct": {
+      "title": "Paper: % equity per posizione",
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 20,
+      "default": 4,
+      "description": "Nozionale di ogni short (e del long BTC di copertura) in % dell'equity."
+    },
+    "maxOpenPositions": {
+      "title": "Paper: posizioni aperte massime",
+      "type": "integer",
+      "minimum": 1,
+      "default": 25,
+      "description": "Oltre questo numero i nuovi sblocchi vengono saltati."
+    },
+    "minTurnover24h": {
+      "title": "Paper: volume minimo 24h (USDT)",
+      "type": "integer",
+      "minimum": 0,
+      "default": 1000000,
+      "description": "Salta i perpetual con volume 24h sotto questa soglia (slippage troppo alto)."
+    },
+    "emergencyStopPct": {
+      "title": "Paper: stop di emergenza (%)",
+      "type": "number",
+      "minimum": 10,
+      "default": 100,
+      "description": "Chiude lo short se il token sale oltre questa % dal prezzo di entrata."
+    },
+    "entryDaysBefore": {
+      "title": "Paper: giorni di entrata prima dello sblocco",
+      "type": "integer",
+      "minimum": 1,
+      "default": 14,
+      "description": "Regola testata: 14. Non cambiarla durante il test in avanti."
+    },
+    "exitDaysAfter": {
+      "title": "Paper: giorni di uscita dopo lo sblocco",
+      "type": "integer",
+      "minimum": 0,
+      "default": 14,
+      "description": "Regola testata: 14. Non cambiarla durante il test in avanti."
+    },
+    "cacheHours": {
+      "title": "Paper: aggiorna calendario ogni N ore",
+      "type": "integer",
+      "minimum": 1,
+      "default": 12,
+      "description": "Il calendario sblocchi (DefiLlama) viene riscaricato al massimo ogni N ore."
+    },
+    "telegramBotToken": {
+      "title": "Paper: token bot Telegram (opzionale)",
+      "type": "string",
+      "editor": "textfield",
+      "isSecret": true,
+      "description": "Per ricevere un messaggio a ogni apertura/chiusura."
+    },
+    "telegramChatId": {
+      "title": "Paper: chat id Telegram (opzionale)",
+      "type": "string",
+      "editor": "textfield",
+      "description": "Chat a cui mandare le notifiche."
+    },
+    "resetPaperState": {
+      "title": "Paper: azzera lo stato",
+      "type": "boolean",
+      "default": false,
+      "description": "Cancella posizioni e storico del paper trading. Usalo una volta sola, poi rimettilo a false."
+    },
+    "simulateNowMs": {
+      "title": "Paper: data simulata (solo test)",
+      "type": "integer",
+      "description": "Solo per test: fa finta che sia questo istante (ms). Lascia vuoto."
     },
     "concurrency": {
       "title": "Backfill: download in parallelo",

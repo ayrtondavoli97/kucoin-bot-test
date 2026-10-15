@@ -17,6 +17,12 @@ Actor Apify che raccoglie solo dati **pubblici** di KuCoin Futures. Nessuna API 
 - `history` — storico lungo (default 5 anni, candele 4h) + funding dei 24 perpetual principali,
   per il backtest trend following (`analysis/trend_study.py`).
 
+- `paper_unlocks` — **paper trading** della strategia sblocchi (nessun ordine reale, nessuna API key).
+  Short sul token da 14 giorni prima a 14 giorni dopo ogni sblocco >= 1% del circolante, coperto con
+  long BTC, 4% dell'equity per posizione, max 25 posizioni, stop di emergenza a +100%.
+  Stato in `kucoin-paper-unlocks` (STATE), trade chiusi in `kucoin-paper-unlocks-trades`,
+  equity a ogni run in `kucoin-paper-unlocks-equity`. **Schedulare ogni ora.**
+
 ## Storage (named, persistente)
 | Nome | Contenuto |
 |---|---|

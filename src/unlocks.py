@@ -285,3 +285,37 @@ async def run_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contracts, fet
     out = {**report, "unmatched_sample": unmatched[:50], "min_pct_circulating": min_pct}
     await Actor.set_value("UNLOCKS_REPORT", out)
     Actor.log.info(f"Fine: {dict(report)}")
+
+
+async def discover_unlock_events(client: httpx.AsyncClient, inp: dict, contracts: list[dict], iso) -> list[dict]:
+    """Tutti gli sblocchi (passati e futuri) dei token con perpetual KuCoin, senza prezzi.
+    Usata dall'executor paper per sapere quali sblocchi stanno arrivando."""
+    min_pct = inp.get("unlockMinPctCirculating", 1.0) / 100
+    merge_days = inp.get("unlockMergeDays", 3)
+    kidx = kucoin_index(contracts)
+    headers = {"x-cg-demo-api-key": inp["coingeckoApiKey"]} if inp.get("coingeckoApiKey") else None
+    gecko = await get_any(client, COINGECKO_LIST, headers=headers) or []
+    gecko_symbol = {g["id"]: g["symbol"].lower() for g in gecko if g.get("id") and g.get("symbol")}
+    slugs = await get_any(client, f"{DATASETS}/emissionsProtocolsList") or []
+    if not gecko_symbol or not slugs:
+        raise RuntimeError(f"Calendario sblocchi non disponibile (CoinGecko {len(gecko_symbol)}, DefiLlama {len(slugs)})")
+    sem = asyncio.Semaphore(max(1, inp.get("concurrency", 4)))
+    found: list[dict] = []
+
+    async def one(slug: str) -> None:
+        async with sem:
+            data = await get_any(client, f"{DATASETS}/emissions/{slug}")
+        if not isinstance(data, dict):
+            return
+        gid, _ = find_gecko_id(data, slug)
+        sym = gecko_symbol.get(gid)
+        contract = kidx.get(sym) if sym else None
+        if not contract:
+            return
+        for ev in extract_events(find_series(data), find_categories(data), min_pct, merge_days):
+            found.append({"protocol": slug, "geckoId": gid, "tokenSymbol": sym,
+                          "kucoinSymbol": contract["symbol"], "perpFirstOpen": contract.get("firstOpenDate") or 0,
+                          "unlockTimeIso": iso(ev["unlockTime"]), **ev})
+
+    await asyncio.gather(*(one(s) for s in slugs))
+    return sorted(found, key=lambda e: e["unlockTime"])

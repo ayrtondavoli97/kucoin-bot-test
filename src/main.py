@@ -422,6 +422,9 @@ async def main() -> None:
                 await run_backfill(client, inp)
             elif mode == "history":
                 await run_history(client, inp)
+            elif mode == "paper_unlocks":
+                from .paper import run_paper_unlocks
+                await run_paper_unlocks(client, inp, fetch_contracts, fetch_funding_history, iso, now_ms)
             elif mode == "unlocks":
                 from .unlocks import run_unlocks
                 await run_unlocks(client, inp, fetch_contracts, fetch_klines,
