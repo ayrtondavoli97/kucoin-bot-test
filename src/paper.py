@@ -73,8 +73,13 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
     max_open = inp.get("maxOpenPositions", 25)
     min_turnover = inp.get("minTurnover24h", 1_000_000)
     stop_pct = inp.get("emergencyStopPct", 100) / 100
+    hedge = inp.get("hedgeBtc", True)
+    pos_usd = inp.get("positionUsd") or None
+    respect_lots = inp.get("respectLotSize", False)
+    # Nome dello stato: task diversi (es. versione 10k e versione 200$) restano separati
+    name = inp.get("paperName") or STORE
 
-    store = await Actor.open_key_value_store(name=STORE)
+    store = await Actor.open_key_value_store(name=name)
     state = await store.get_value("STATE") or {
         "createdAt": now, "createdAtIso": iso(now), "capital": float(inp.get("paperCapital", 10_000)),
         "realized": 0.0, "positions": {}, "handled": {}, "closedTrades": 0, "wins": 0,
@@ -99,7 +104,7 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
         Actor.log.info(f"Calendario sblocchi aggiornato: {len(cache['events'])} eventi rilevanti")
     events = cache["events"]
 
-    trades_ds = await Actor.open_dataset(name=TRADES_DS)
+    trades_ds = await Actor.open_dataset(name=f"{name}-trades")
     positions: dict = state["positions"]
 
     # --- 1) funding maturato sulle posizioni aperte
@@ -109,7 +114,7 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
             continue
         try:
             fa = await fetch_funding_history(client, p["symbol"], start, now)
-            fb = await fetch_funding_history(client, BTC, start, now)
+            fb = await fetch_funding_history(client, BTC, start, now) if p.get("hedged", True) else []
         except Exception as e:
             Actor.log.warning(f"{key}: funding non aggiornato ({e})")
             continue
@@ -126,8 +131,9 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
         exit_alt = px * (1 + SLIP_ALT)                       # ricompro il token un po' più caro
         exit_btc = btc_px * (1 - SLIP_BTC)                   # rivendo BTC un po' più basso
         pnl_alt = p["notional"] * (p["entryFill"] - exit_alt) / p["entryFill"]
-        pnl_btc = p["notional"] * (exit_btc / p["btcEntryFill"] - 1)
-        fees = p["notional"] * TAKER * 2 * 2                 # 2 gambe x (apertura + chiusura)
+        hedged = p.get("hedged", True)
+        pnl_btc = p["notional"] * (exit_btc / p["btcEntryFill"] - 1) if hedged else 0.0
+        fees = p["notional"] * TAKER * 2 * (2 if hedged else 1)   # gambe x (apertura + chiusura)
         pnl = pnl_alt + pnl_btc + p["funding"] - fees
         state["realized"] += pnl
         state["closedTrades"] += 1
@@ -152,7 +158,7 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
     for t in closed:
         await trades_ds.push_data(t)
         Actor.log.info(f"CHIUSA {t['symbol']} ({t['exitReason']}): {t['pnl']:+.2f} USDT ({t['returnOnNotional']*100:+.1f}%)")
-        await notify(client, inp, f"[PAPER] Chiusa short {t['symbol']} ({t['exitReason']}): "
+        await notify(client, inp, f"[PAPER {name}] Chiusa short {t['symbol']} ({t['exitReason']}): "
                                   f"{t['pnl']:+.2f} USDT ({t['returnOnNotional']*100:+.1f}%)")
 
     # --- 3) aperture
@@ -161,8 +167,10 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
         for p in positions.values():
             px = p["lastPx"]
             unreal += p["notional"] * (p["entryFill"] - px) / p["entryFill"]
-            unreal += p["notional"] * (btc_px / p["btcEntryFill"] - 1)
-            unreal += p["funding"] - p["notional"] * TAKER * 2
+            legs = 2 if p.get("hedged", True) else 1
+            if legs == 2:
+                unreal += p["notional"] * (btc_px / p["btcEntryFill"] - 1)
+            unreal += p["funding"] - p["notional"] * TAKER * legs
         return state["capital"] + state["realized"] + unreal
 
     handled: dict = state["handled"]
@@ -189,11 +197,21 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
             reason = "max_posizioni"
         elif now > tu - (entry_days - 2) * DAY:
             reason = "entrata_in_ritardo"     # il run è arrivato tardi: non si insegue
+        notional = 0.0
+        if not reason:
+            eq_now = equity_now()
+            notional = min(float(pos_usd), eq_now / max_open) if pos_usd else eq_now * pos_pct
+            if respect_lots:
+                lot_value = float(c.get("multiplier") or 1) * px   # valore di 1 contratto in USDT
+                lots = int(notional // lot_value) if lot_value > 0 else 0
+                if lots < 1:
+                    reason = f"taglio_minimo ({lot_value:.2f} USDT a contratto)"
+                notional = lots * lot_value
+            notional = round(notional, 2)
         if reason:
             handled[key] = reason
             Actor.log.info(f"Saltato {key} ({ev['unlockTimeIso'][:10]}): {reason}")
             continue
-        notional = round(equity_now() * pos_pct, 2)
         positions[key] = {
             "key": key, "symbol": sym, "protocol": ev["protocol"], "unlockTime": tu,
             "unlockTimeIso": ev["unlockTimeIso"], "pctOfCirculating": ev.get("pctOfCirculating"),
@@ -202,12 +220,13 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
             "exitDueIso": iso(tu + exit_days * DAY), "notional": notional,
             "entryPx": px, "entryFill": px * (1 - SLIP_ALT), "lastPx": px,
             "btcEntryPx": btc_px, "btcEntryFill": btc_px * (1 + SLIP_BTC),
-            "funding": 0.0, "fundingUntil": now,
+            "funding": 0.0, "fundingUntil": now, "hedged": bool(hedge),
         }
         handled[key] = "aperta"
         Actor.log.info(f"APERTA short {sym} {notional:.2f} USDT @ {px} (sblocco {ev['unlockTimeIso'][:10]}, "
                        f"{(ev.get('pctOfCirculating') or 0)*100:.1f}% circolante, {ev.get('mainGroup')})")
-        await notify(client, inp, f"[PAPER] Aperta short {sym} {notional:.0f} USDT @ {px} + long BTC. "
+        await notify(client, inp, f"[PAPER {name}] Aperta short {sym} {notional:.0f} USDT @ {px}"
+                                  f"{' + long BTC' if hedge else ''}. "
                                   f"Sblocco {ev['unlockTimeIso'][:10]} "
                                   f"({(ev.get('pctOfCirculating') or 0)*100:.1f}% circolante, {ev.get('mainGroup')})")
 
@@ -223,7 +242,7 @@ async def run_paper_unlocks(client: httpx.AsyncClient, inp: dict, fetch_contract
     state["lastRunIso"] = iso(now)
     state["summary"] = snap
     await store.set_value("STATE", state)
-    await (await Actor.open_dataset(name=EQUITY_DS)).push_data(snap)
+    await (await Actor.open_dataset(name=f"{name}-equity")).push_data(snap)
     await Actor.set_value("OUTPUT", {**snap, "positions": list(positions.values())})
     upcoming = [e for e in events if now < e["unlockTime"] - entry_days * DAY < now + 7 * DAY]
     Actor.log.info(f"Equity {eq:.2f} USDT ({snap['returnSinceStart']*100:+.2f}%), {len(positions)} aperte, "

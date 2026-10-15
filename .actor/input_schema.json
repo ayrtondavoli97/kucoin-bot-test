@@ -160,6 +160,30 @@
       "default": 10000,
       "description": "Capitale simulato. Usato solo al primo run (o dopo un reset)."
     },
+    "paperName": {
+      "title": "Paper: nome dello stato",
+      "type": "string",
+      "editor": "textfield",
+      "description": "Nome dello stato e dei dataset del paper trading. Task diversi devono avere nomi diversi. Vuoto = kucoin-paper-unlocks."
+    },
+    "hedgeBtc": {
+      "title": "Paper: copertura con long BTC",
+      "type": "boolean",
+      "default": true,
+      "description": "Se attivo, ogni short sul token ha un long BTC di pari importo. Con capitali piccoli non è realizzabile (taglio minimo BTC)."
+    },
+    "positionUsd": {
+      "title": "Paper: importo fisso per posizione (USDT)",
+      "type": "number",
+      "minimum": 1,
+      "description": "Se impostato sostituisce la % di equity (mai oltre equity / posizioni massime)."
+    },
+    "respectLotSize": {
+      "title": "Paper: rispetta il taglio minimo dei contratti",
+      "type": "boolean",
+      "default": false,
+      "description": "Arrotonda ogni posizione a contratti interi KuCoin e salta i token dove 1 contratto supera l'importo."
+    },
     "positionPct": {
       "title": "Paper: % equity per posizione",
       "type": "number",
